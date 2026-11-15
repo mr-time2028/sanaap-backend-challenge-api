@@ -1,0 +1,4 @@
+# Ruff configuration — keep it minimal.
+[lint.per-file-ignores]
+# Machine-generated Django migration files
+"*/migrations/*" = ["RUF012"]
