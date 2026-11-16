@@ -125,8 +125,8 @@ make check      # lint + types + tests
 | Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
 
 The two projects are isolated (separate volumes) and can run at the same time.
-In production, nginx is the only public entry point: it proxies to gunicorn
-and serves `/static/`. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
+In production, nginx is the only public entry point: it proxies to gunicorn,
+serves `/static/`, and upgrades WebSocket connections. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
 a local-filesystem backend is available via `STORAGE_BACKEND=local` — MinIO
 console: http://127.0.0.1:9001).
 
@@ -234,7 +234,14 @@ Every document change is recorded in an **audit trail** (`action`, actor,
 document snapshot, change diff, timestamp) — readable by admins at
 `GET /api/v1/audit-logs/`. It is built with the Observer pattern: services
 publish document events, and the audit recorder subscribes (the WebSocket
-notifications will subscribe to the same events).
+notifications subscribe to the same events).
+
+**Real-time notifications:** connect to
+`ws://localhost:8080/ws/documents/?token=<access>` (authenticated WebSocket)
+and every document create/update/delete arrives as JSON:
+`{action, document_id, document_title, username, changes}`. Built with
+Django Channels; the dev/test channel layer is in-memory, production shares a
+Redis channel layer across workers.
 
 ### Roles
 
@@ -264,12 +271,13 @@ notifications will subscribe to the same events).
 
 ## Project structure
 
-- `config/` — Django project (settings, urls, Celery app, shared pagination)
+- `config/` — Django project (settings, urls, Celery app, shared pagination,
+  WebSocket auth middleware, ASGI routing)
 - `accounts/` — user model with roles; JWT auth, password reset and user
   management (views, serializers, services)
 - `documents/` — model, repository (Protocol + ORM adapter), storage backends
   (MinIO/local behind a Protocol), validation, role policies (Strategy),
-  domain events (Observer seam), service layer, API
+  domain events (Observer seam), WebSocket consumer, service layer, API
 - `audit/` — audit trail model + Observer recorder (who changed what, when)
 - `tests/` — pytest suite
 - `docker-compose.yml` — production: nginx + app + worker + PostgreSQL +
