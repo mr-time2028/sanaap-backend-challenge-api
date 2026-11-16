@@ -104,6 +104,7 @@ class DocumentDetailView(APIView):
         file = data.get("file")
         updated = service.update(
             document,
+            user=request.user,
             title=data.get("title"),
             description=data.get("description"),
             file_name=file.name if file is not None else None,
@@ -122,7 +123,7 @@ class DocumentDetailView(APIView):
         document = service.get(pk)
         if document is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        service.delete(document)
+        service.delete(document, user=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
