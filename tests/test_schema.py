@@ -1,0 +1,17 @@
+"""Tests for the OpenAPI schema and Swagger UI."""
+
+from rest_framework import status
+from rest_framework.test import APIClient
+
+
+def test_schema_endpoint_returns_openapi(api: APIClient) -> None:
+    response = api.get("/api/schema/")
+    assert response.status_code == status.HTTP_200_OK
+    schema = response.data  # raw dict — works whatever the content type
+    assert schema["openapi"].startswith("3.")
+    assert "/api/v1/auth/login/" in schema["paths"]
+
+
+def test_swagger_ui_loads(api: APIClient) -> None:
+    response = api.get("/api/docs/")
+    assert response.status_code == status.HTTP_200_OK
