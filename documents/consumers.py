@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from asgiref.sync import async_to_sync
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.layers import get_channel_layer
+
+from documents.events import DocumentEvent
 
 
 class DocumentEventsConsumer(AsyncJsonWebsocketConsumer):
@@ -32,4 +36,27 @@ class DocumentEventsConsumer(AsyncJsonWebsocketConsumer):
                 "username": event["username"],
                 "changes": event["changes"],
             }
+        )
+
+
+class WebSocketObserver:
+    """Observer that broadcasts document events to the channel-layer group."""
+
+    def on_document_event(self, event: DocumentEvent) -> None:
+        async_to_sync(self._broadcast)(event)
+
+    async def _broadcast(self, event: DocumentEvent) -> None:
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        await channel_layer.group_send(
+            DocumentEventsConsumer.GROUP,
+            {
+                "type": "document.event",
+                "action": event.action,
+                "document_id": event.document_id,
+                "document_title": event.document_title,
+                "username": getattr(event.user, "username", None),
+                "changes": event.changes,
+            },
         )

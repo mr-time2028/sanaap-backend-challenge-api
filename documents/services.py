@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from audit.observer import AuditObserver
+from documents.consumers import WebSocketObserver
 from documents.events import DocumentEvent, DocumentObserver
 from documents.models import Document
 from documents.repositories import (
@@ -173,5 +174,5 @@ def get_document_service() -> DocumentService:
     return DocumentService(
         DjangoDocumentRepository(),
         STORAGE_BACKENDS[backend](),
-        observers=[AuditObserver()],
+        observers=[AuditObserver(), WebSocketObserver()],
     )
