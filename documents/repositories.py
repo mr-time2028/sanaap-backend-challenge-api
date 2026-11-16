@@ -1,56 +1,65 @@
-"""Document repository: port (Protocol) + Django ORM adapter.
+"""Persistence seam — Protocol + Django ORM adapter (DIP)."""
 
-High-level code depends on the ``DocumentRepository`` protocol only
-(Dependency Inversion); ``DjangoDocumentRepository`` is the concrete adapter.
-Unit tests can substitute an in-memory fake with the same interface.
-"""
+from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from documents.models import Document
 
 
-@runtime_checkable
 class DocumentRepository(Protocol):
-    """What the domain needs from a document store."""
-
-    def add(self, document: Document) -> Document:
-        """Persist a new document and return it (with its id)."""
-        ...
-
-    def get(self, document_id: int) -> Document | None:
-        """Return the document with this id, or None."""
-        ...
-
-    def list(self) -> list[Document]:
-        """Return all documents, newest first."""
-        ...
-
-    def save(self, document: Document) -> Document:
-        """Persist changes to an existing document."""
-        ...
-
-    def delete(self, document: Document) -> None:
-        """Delete the document."""
-        ...
+    def add(self, document: Document) -> Document: ...
+    def get_by_id(self, document_id: int) -> Document | None: ...
+    def list_all(self) -> list[Document]: ...
+    def update(self, document: Document) -> Document: ...
+    def delete(self, document_id: int) -> None: ...
 
 
 class DjangoDocumentRepository:
-    """Django ORM implementation of ``DocumentRepository``."""
-
     def add(self, document: Document) -> Document:
         document.save()
         return document
 
-    def get(self, document_id: int) -> Document | None:
-        return Document.objects.filter(pk=document_id).first()
+    def get_by_id(self, document_id: int) -> Document | None:
+        try:
+            return Document.objects.get(pk=document_id)
+        except Document.DoesNotExist:
+            return None
 
-    def list(self) -> list[Document]:
-        return list(Document.objects.order_by("-created_at"))
+    def list_all(self) -> list[Document]:
+        return list(Document.objects.all())
 
-    def save(self, document: Document) -> Document:
+    def update(self, document: Document) -> Document:
         document.save()
         return document
 
-    def delete(self, document: Document) -> None:
-        document.delete()
+    def delete(self, document_id: int) -> None:
+        Document.objects.filter(pk=document_id).delete()
+
+
+class InMemoryDocumentRepository:
+    """Fake for tests — no database."""
+
+    def __init__(self) -> None:
+        self._documents: dict[int, Document] = {}
+        self._next_id = 1
+
+    def add(self, document: Document) -> Document:
+        new_id = self._next_id
+        self._next_id += 1
+        document.id = new_id
+        self._documents[new_id] = document
+        return document
+
+    def get_by_id(self, document_id: int) -> Document | None:
+        return self._documents.get(document_id)
+
+    def list_all(self) -> list[Document]:
+        return list(self._documents.values())
+
+    def update(self, document: Document) -> Document:
+        self._documents[document.id] = document
+        return document
+
+    def delete(self, document_id: int) -> None:
+        self._documents.pop(document_id, None)
