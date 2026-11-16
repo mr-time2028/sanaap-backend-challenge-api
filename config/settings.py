@@ -161,3 +161,9 @@ SIMPLE_JWT = {
         days=int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))
     ),
 }
+
+# Dev mailer — prints emails to the console (swap BACKEND for SMTP in production).
+MAILERS = {
+    "default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"},
+}
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@dms.local")
