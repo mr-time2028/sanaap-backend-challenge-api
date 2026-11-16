@@ -198,6 +198,7 @@ schema at `/api/schema/`.
 | DELETE | `/api/v1/documents/<id>/` | Bearer | delete document + stored file |
 | GET | `/api/v1/documents/<id>/download/` | Bearer | download the file |
 | GET | `/api/v1/documents/<id>/url/` | Bearer | presigned download URL (1 hour) |
+| GET | `/api/v1/audit-logs/` | admin | audit trail — every document change with actor and diff |
 
 Authenticate by sending `Authorization: Bearer <access>` on protected
 endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
@@ -214,11 +215,17 @@ Uploads are processed in the background: a Celery worker computes the file's
 SHA-256 checksum, which appears in the document metadata (`checksum`) shortly
 after the upload (immediately in tests).
 
+Every document change is recorded in an **audit trail** (`action`, actor,
+document snapshot, change diff, timestamp) — readable by admins at
+`GET /api/v1/audit-logs/`. It is built with the Observer pattern: services
+publish document events, and the audit recorder subscribes (the WebSocket
+notifications will subscribe to the same events).
+
 ### Roles
 
 | Role | Can |
 |------|-----|
-| `admin` | everything — user management, upload, update, delete, download |
+| `admin` | everything — user management, audit log, upload, update, delete, download |
 | `editor` | upload and update documents/images; download — **no delete** |
 | `viewer` | list and download documents only |
 
@@ -247,7 +254,8 @@ after the upload (immediately in tests).
   management (views, serializers, services)
 - `documents/` — model, repository (Protocol + ORM adapter), storage backends
   (MinIO/local behind a Protocol), validation, role policies (Strategy),
-  service layer, API
+  domain events (Observer seam), service layer, API
+- `audit/` — audit trail model + Observer recorder (who changed what, when)
 - `tests/` — pytest suite
 - `docker-compose.yml` — production: app + PostgreSQL + MinIO (nginx-ready)
 - `docker-compose.dev.yml` — development: PostgreSQL + MinIO (app runs in
