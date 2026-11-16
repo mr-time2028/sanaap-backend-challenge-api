@@ -25,15 +25,29 @@ cp .env.example .env
 ```
 
 Open `.env` and adjust if needed (`SECRET_KEY`, JWT token lifetimes,
-`DEFAULT_FROM_EMAIL`, …).
+`DEFAULT_FROM_EMAIL`, …). The database defaults to **PostgreSQL** running in
+Docker (next step); set `DB_ENGINE=sqlite3` for zero-setup SQLite instead.
 
-### 3. Create the database tables
+### 3. Start the development database
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+The **development** compose file (`docker-compose.dev.yml`, project
+`dms-dev`) starts PostgreSQL only — the app runs in your venv. Redis and
+MinIO join this file at their feature levels. Port 5432 already taken?
+Change the left side to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
+
+### 4. Create the database tables
 
 ```bash
 python manage.py migrate
 ```
 
-### 4. Create the first admin
+*(Not needed in production — migrations run automatically on container start.)*
+
+### 5. Create the first admin
 
 There is **no self-registration** — users are provisioned by an admin, so the
 very first admin is created from a shell:
@@ -42,15 +56,30 @@ very first admin is created from a shell:
 python manage.py shell -c "from accounts.models import User, UserRole; User.objects.create_superuser('admin', 'admin@example.com', 'secret123', role=UserRole.ADMIN)"
 ```
 
-### 5. Run the server
+In production, run it inside the app container:
 
 ```bash
-make run        # or: python manage.py runserver
+docker compose exec web python manage.py shell -c "from accounts.models import User, UserRole; User.objects.create_superuser('admin', 'admin@example.com', 'secret123', role=UserRole.ADMIN)"
+```
+
+### 6. Run the server
+
+**Development** — app in the venv, against the dev database:
+
+```bash
+make run
+```
+
+**Production** — full stack from the default compose file (`docker-compose.yml`,
+project `dms-prod`): app container (auto-migrates on start) + PostgreSQL:
+
+```bash
+docker compose up --build
 ```
 
 → http://127.0.0.1:8000
 
-### 6. Work with the API
+### 7. Work with the API
 
 Log in with the admin credentials to get a JWT pair:
 
@@ -69,11 +98,48 @@ curl http://127.0.0.1:8000/api/v1/users/ \
 
 The full endpoint list is in [API](#api) below.
 
-### 7. Run the tests & quality gates
+### 8. Run the tests & quality gates
 
 ```bash
 make check      # lint + types + tests
 ```
+
+## Development & production environments
+
+| | Development | Production |
+|---|---|---|
+| Compose file | `docker-compose.dev.yml` (`dms-dev`) | `docker-compose.yml` (`dms-prod`) |
+| App | runs in your venv (`make run`) | `web` container from `Dockerfile` |
+| Database | `postgres` container, port 5432 published | `postgres` container, internal network only |
+| Migrations | `python manage.py migrate` | automatic on container start |
+| Start | `docker compose -f docker-compose.dev.yml up -d` | `docker compose up --build` |
+| Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
+
+The two projects are isolated (separate volumes) and can run at the same time.
+Redis and MinIO will join **both** files at their feature levels; nginx joins
+the production file.
+
+### Deploying to a server
+
+Only `.env` changes per machine — the compose files are machine-independent:
+
+```bash
+git clone <repo> && cd sanaap-backend-challenge-api
+cp .env.example .env
+# set SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS=<your domain>
+# (and WEB_PORT in .env if port 8000 is taken)
+docker compose up --build -d
+```
+
+Redeploying: `git pull && docker compose up --build -d`.
+
+### Running without Docker
+
+Keep `DB_ENGINE=sqlite3` in `.env` — the SQLite fallback needs zero setup and
+everything (`make run`, `make check`) works the same. For native PostgreSQL,
+create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
+`CREATE DATABASE dms OWNER dms;`) and set the `DB_*` values in `.env`.
+`CREATEDB` lets Django create the automatic `test_dms` test database.
 
 ## Commands
 
@@ -88,13 +154,18 @@ make check      # lint + types + tests
 | `make typecheck` | static type check (mypy) |
 | `make check` | **all quality gates** (lint + types + tests) |
 | `make help` | list all available commands |
+| `docker compose -f docker-compose.dev.yml up -d` | start the dev database |
+| `docker compose up --build` | build + run the production stack |
+| `docker compose logs -f web` | production app logs |
+| `docker compose exec web <cmd>` | run a command in the production app |
+| `docker compose down` | stop production (`-v` also wipes the db volume) |
 
 No `make`? Plain equivalents: `python manage.py runserver`, `python manage.py migrate`,
 `pytest`, `ruff check .`, `ruff format .`, `mypy .`
 
 Tests live in `tests/` and run against an automatic throwaway test database
-(SQLite by default) — your data is never touched and no external services are
-needed. Run them before every push; `make check` is the full gate.
+(`test_dms` on PostgreSQL, in-memory on SQLite) — your real data is never
+touched. Run them before every push; `make check` is the full gate.
 
 ## API
 
@@ -129,17 +200,16 @@ endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
 | 1 | `develop` | project bootstrap, env-driven settings |
 | 2 | `feature/database-repositories` | user & document models, repository pattern (Protocol + Django ORM) |
 | 3 | `feature/auth-user-management` | JWT auth, password reset, user management |
-| 4 | `feature/postgresql` | PostgreSQL (env-driven, SQLite fallback) |
-| 5 | `feature/documents-api-minio` | document CRUD + MinIO storage (Facade, Singleton) |
-| 6 | `feature/rbac-secure-urls` | role policies + presigned URLs (Strategy) |
-| 7 | `feature/filter-pagination` | filtering & pagination |
-| 8 | `feature/swagger-readme` | OpenAPI/Swagger documentation |
-| 9 | `feature/docker-deployment` | Docker Compose (Django/PostgreSQL/Redis/MinIO) |
-| 10 | `feature/background-tasks` | Celery background tasks |
-| 11 | `feature/audit-logging` | audit logging (Observer) |
-| 12 | `feature/nginx-gunicorn` | production serving |
-| 13 | `feature/websocket-notifications` | WebSocket notifications (Channels) |
-| 14 | `feature/final-qa` | coverage gate, release to `main` (`v1.0.0`) |
+| 4 | `feature/docker-deployment` | dev/prod Docker Compose + PostgreSQL integration |
+| 5 | `feature/swagger-readme` | Swagger UI + OpenAPI docs (`drf-spectacular`) |
+| 6 | `feature/documents-api-minio` | document CRUD + MinIO storage (Facade, Singleton) |
+| 7 | `feature/rbac-secure-urls` | role policies + presigned URLs (Strategy) |
+| 8 | `feature/filter-pagination` | filtering & pagination |
+| 9 | `feature/background-tasks` | Celery background tasks (Redis joins Compose) |
+| 10 | `feature/audit-logging` | audit logging (Observer) |
+| 11 | `feature/nginx-gunicorn` | production serving |
+| 12 | `feature/websocket-notifications` | WebSocket notifications (Channels) |
+| 13 | `feature/final-qa` | coverage gate, release to `main` (`v1.0.0`) |
 
 ## Project structure
 
@@ -148,6 +218,10 @@ endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
   management (views, serializers, services)
 - `documents/` — document model + repository (Protocol + Django ORM adapter)
 - `tests/` — pytest suite
+- `docker-compose.yml` — production: app + PostgreSQL (nginx-ready)
+- `docker-compose.dev.yml` — development: PostgreSQL (app runs in venv;
+  Redis & MinIO join later)
+- `Dockerfile` / `entrypoint.sh` — container image with auto-migrations
 
 ## References
 
