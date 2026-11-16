@@ -8,17 +8,21 @@ from __future__ import annotations
 import io
 import os
 import uuid
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
 from minio import Minio
 
+URL_TTL = timedelta(hours=1)
+
 
 class DocumentStorage(Protocol):
     def put(self, *, data: bytes, file_name: str, content_type: str) -> str: ...
     def get(self, key: str) -> bytes: ...
     def delete(self, key: str) -> None: ...
+    def url_for(self, key: str) -> str: ...
 
 
 @lru_cache(maxsize=1)
@@ -66,6 +70,9 @@ class MinioStorage:
     def delete(self, key: str) -> None:
         self._client.remove_object(self._bucket, key)
 
+    def url_for(self, key: str) -> str:
+        return self._client.presigned_get_object(self._bucket, key, expires=URL_TTL)
+
 
 class LocalStorage:
     """Local-filesystem backend — same Protocol, for STORAGE_BACKEND=local."""
@@ -86,6 +93,9 @@ class LocalStorage:
     def delete(self, key: str) -> None:
         (self._root / key).unlink(missing_ok=True)
 
+    def url_for(self, key: str) -> str:
+        return (self._root / key).resolve().as_uri()
+
 
 class InMemoryDocumentStorage:
     """Fake for tests — zero external services."""
@@ -103,3 +113,6 @@ class InMemoryDocumentStorage:
 
     def delete(self, key: str) -> None:
         self._objects.pop(key, None)
+
+    def url_for(self, key: str) -> str:
+        return f"memory://{key}"
