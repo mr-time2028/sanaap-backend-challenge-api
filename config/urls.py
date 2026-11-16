@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny
 api_urlpatterns = [
     path("", include("accounts.urls")),
     path("", include("documents.urls")),
+    path("", include("audit.urls")),
 ]
 
 urlpatterns = [
