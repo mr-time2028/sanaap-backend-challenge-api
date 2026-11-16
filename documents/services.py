@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
 
+from audit.observer import AuditObserver
+from documents.events import DocumentEvent, DocumentObserver
 from documents.models import Document
 from documents.repositories import (
     DjangoDocumentRepository,
@@ -29,10 +31,18 @@ STORAGE_BACKENDS: dict[str, Callable[[], DocumentStorage]] = {
 
 class DocumentService:
     def __init__(
-        self, repository: DocumentRepository, storage: DocumentStorage
+        self,
+        repository: DocumentRepository,
+        storage: DocumentStorage,
+        observers: Sequence[DocumentObserver] = (),
     ) -> None:
         self._repository = repository
         self._storage = storage
+        self._observers = list(observers)
+
+    def _notify(self, event: DocumentEvent) -> None:
+        for observer in self._observers:
+            observer.on_document_event(event)
 
     def create(
         self,
@@ -57,7 +67,17 @@ class DocumentService:
             storage_key=key,
             uploaded_by=user,
         )
-        return self._repository.add(document)
+        document = self._repository.add(document)
+        self._notify(
+            DocumentEvent(
+                action="created",
+                document_id=document.pk,
+                document_title=document.title,
+                user=user,
+                changes={"file_name": file_name, "size": len(data)},
+            )
+        )
+        return document
 
     def get(self, document_id: int) -> Document | None:
         return self._repository.get_by_id(document_id)
@@ -71,13 +91,21 @@ class DocumentService:
         self,
         document: Document,
         *,
+        user: Any = None,
         title: str | None = None,
         description: str | None = None,
         file_name: str | None = None,
         content_type: str | None = None,
         data: bytes | None = None,
     ) -> Document:
+        changes: dict[str, Any] = {}
+        if title is not None and title != document.title:
+            changes["title"] = {"old": document.title, "new": title}
+        if description is not None and description != document.description:
+            changes["description"] = {"old": document.description, "new": description}
         if data is not None and file_name is not None and content_type is not None:
+            if file_name != document.file_name:
+                changes["file_name"] = {"old": document.file_name, "new": file_name}
             validate_upload(
                 file_name=file_name, content_type=content_type, size=len(data)
             )
@@ -92,11 +120,32 @@ class DocumentService:
             document.title = title
         if description is not None:
             document.description = description
-        return self._repository.update(document)
+        updated = self._repository.update(document)
+        if changes:
+            self._notify(
+                DocumentEvent(
+                    action="updated",
+                    document_id=updated.pk,
+                    document_title=updated.title,
+                    user=user,
+                    changes=changes,
+                )
+            )
+        return updated
 
-    def delete(self, document: Document) -> None:
+    def delete(self, document: Document, *, user: Any = None) -> None:
+        document_id = document.pk
         self._storage.delete(document.storage_key)
-        self._repository.delete(document.pk)
+        self._repository.delete(document_id)
+        self._notify(
+            DocumentEvent(
+                action="deleted",
+                document_id=document_id,
+                document_title=document.title,
+                user=user,
+                changes={"file_name": document.file_name},
+            )
+        )
 
     def download(self, document: Document) -> bytes:
         return self._storage.get(document.storage_key)
@@ -121,4 +170,8 @@ def get_document_service() -> DocumentService:
         raise ImproperlyConfigured(
             f"Unknown STORAGE_BACKEND {backend!r} — expected one of {sorted(STORAGE_BACKENDS)}."
         )
-    return DocumentService(DjangoDocumentRepository(), STORAGE_BACKENDS[backend]())
+    return DocumentService(
+        DjangoDocumentRepository(),
+        STORAGE_BACKENDS[backend](),
+        observers=[AuditObserver()],
+    )
