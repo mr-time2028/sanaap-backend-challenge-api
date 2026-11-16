@@ -1,84 +1,39 @@
-"""Tests for the repository protocol and both implementations.
-
-The in-memory fake proves DIP/LSP: same interface, interchangeable behavior.
-"""
+"""Tests for the document repository (Django adapter on the test database)."""
 
 import pytest
 
 from accounts.models import User
 from documents.models import Document
-from documents.repositories import DjangoDocumentRepository, DocumentRepository
+from documents.repositories import DjangoDocumentRepository
 
 
-class InMemoryDocumentRepository:
-    """Test double implementing the same protocol (works without a database)."""
-
-    def __init__(self) -> None:
-        self._rows: dict[int, Document] = {}
-        self._next_id = 1
-
-    def add(self, document: Document) -> Document:
-        document.pk = self._next_id
-        self._rows[self._next_id] = document
-        self._next_id += 1
-        return document
-
-    def get(self, document_id: int) -> Document | None:
-        return self._rows.get(document_id)
-
-    def list(self) -> list[Document]:
-        return list(self._rows.values())
-
-    def save(self, document: Document) -> Document:
-        assert document.pk is not None
-        self._rows[document.pk] = document
-        return document
-
-    def delete(self, document: Document) -> None:
-        self._rows.pop(document.pk, None)
-
-
-def test_both_repositories_satisfy_the_protocol() -> None:
-    assert isinstance(DjangoDocumentRepository(), DocumentRepository)
-    assert isinstance(InMemoryDocumentRepository(), DocumentRepository)
-
-
-def test_in_memory_repository_roundtrip() -> None:
-    repo = InMemoryDocumentRepository()
-    doc = repo.add(
-        Document(
-            title="Draft",
-            file_key="documents/draft.pdf",
-            content_type="application/pdf",
-            size=10,
-        )
+@pytest.fixture
+def document(db: None, user: User) -> Document:
+    return Document.objects.create(
+        title="Report",
+        file_name="report.pdf",
+        content_type="application/pdf",
+        size=10,
+        storage_key="abc/report.pdf",
+        uploaded_by=user,
     )
-    assert repo.get(doc.pk) is doc
-    doc.title = "Draft v2"
-    repo.save(doc)
-    assert repo.get(doc.pk).title == "Draft v2"  # type: ignore[union-attr]
-    assert repo.list() == [doc]
-    repo.delete(doc)
-    assert repo.get(doc.pk) is None
 
 
-@pytest.mark.django_db
-def test_django_repository_roundtrip() -> None:
-    user = User.objects.create_user(username="dave", password="secret123")
+def test_add_and_get(document: Document) -> None:
+    found = DjangoDocumentRepository().get_by_id(document.id)
+    assert found is not None
+    assert found.title == "Report"
+
+
+def test_get_missing_returns_none(db: None) -> None:
+    assert DjangoDocumentRepository().get_by_id(999) is None
+
+
+def test_list_all(document: Document) -> None:
+    assert len(DjangoDocumentRepository().list_all()) == 1
+
+
+def test_delete(document: Document) -> None:
     repo = DjangoDocumentRepository()
-    doc = repo.add(
-        Document(
-            title="Report",
-            file_key="documents/report.pdf",
-            content_type="application/pdf",
-            size=20,
-            uploaded_by=user,
-        )
-    )
-    assert repo.get(doc.pk) is not None
-    doc.title = "Report final"
-    repo.save(doc)
-    assert repo.get(doc.pk).title == "Report final"  # type: ignore[union-attr]
-    assert len(repo.list()) == 1
-    repo.delete(doc)
-    assert repo.get(doc.pk) is None
+    repo.delete(document.id)
+    assert repo.get_by_id(document.id) is None
