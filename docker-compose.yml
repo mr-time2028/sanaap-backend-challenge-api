@@ -1,0 +1,34 @@
+# Production: app (from Dockerfile, auto-migrates on start) + PostgreSQL.
+# nginx joins this file at its feature level.
+name: dms-prod
+
+services:
+  postgres:
+    container_name: "dms_postgres"
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dms}
+      POSTGRES_USER: ${DB_USER:-dms}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dms}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dms} -d ${DB_NAME:-dms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # No published ports — the app reaches postgres over the compose network.
+
+  web:
+    container_name: "dms_web"
+    build: .
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
