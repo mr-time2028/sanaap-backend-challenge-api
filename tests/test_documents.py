@@ -1,5 +1,6 @@
 """API tests for the documents endpoints (fake storage — no MinIO needed)."""
 
+import hashlib
 from datetime import date, timedelta
 
 import pytest
@@ -20,6 +21,7 @@ CREDS = {"username": "hamid", "password": "secret123"}
 def fake_storage(monkeypatch: pytest.MonkeyPatch) -> DocumentService:
     service = DocumentService(DjangoDocumentRepository(), InMemoryDocumentStorage())
     monkeypatch.setattr("documents.views.get_document_service", lambda: service)
+    monkeypatch.setattr("documents.tasks.get_document_service", lambda: service)
     return service
 
 
@@ -265,3 +267,19 @@ def test_page_size_defaults_to_ten(
     response = auth.get("/api/v1/documents/")
     assert len(response.data["results"]) == 10
     assert response.data["count"] == 12
+
+
+def test_upload_triggers_background_checksum(auth: APIClient) -> None:
+    document_id = upload(auth).data["id"]
+    document = auth.get(f"/api/v1/documents/{document_id}/").data
+    assert document["checksum"] == hashlib.sha256(b"hello").hexdigest()
+
+
+def test_file_replacement_recomputes_checksum(auth: APIClient) -> None:
+    document_id = upload(auth).data["id"]
+    auth.patch(
+        f"/api/v1/documents/{document_id}/",
+        {"file": SimpleUploadedFile("new.txt", b"v2", content_type="text/plain")},
+    )
+    document = auth.get(f"/api/v1/documents/{document_id}/").data
+    assert document["checksum"] == hashlib.sha256(b"v2").hexdigest()
