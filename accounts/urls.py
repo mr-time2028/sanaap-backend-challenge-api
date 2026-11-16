@@ -8,6 +8,8 @@ from accounts.views import (
     PasswordResetConfirmView,
     PasswordResetRequestView,
     RefreshView,
+    UserListCreateView,
+    UserRoleView,
 )
 
 urlpatterns = [
@@ -24,4 +26,6 @@ urlpatterns = [
         PasswordResetConfirmView.as_view(),
         name="password-reset-confirm",
     ),
+    path("users/", UserListCreateView.as_view(), name="user-list-create"),
+    path("users/<int:pk>/role/", UserRoleView.as_view(), name="user-role-update"),
 ]

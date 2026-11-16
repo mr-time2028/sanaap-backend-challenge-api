@@ -11,10 +11,13 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from accounts.permissions import IsAdminRole
 from accounts.serializers import (
     LogoutSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    RoleUpdateSerializer,
+    UserSerializer,
 )
 from accounts.services import request_password_reset, reset_password
 
@@ -90,3 +93,34 @@ class PasswordResetConfirmView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response({"detail": "Password updated."})
+
+
+class UserListCreateView(APIView):
+    """Admin: list users (GET) and create users (POST)."""
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request: Request) -> Response:
+        users = User.objects.all().order_by("id")
+        return Response(UserSerializer(users, many=True).data)
+
+    def post(self, request: Request) -> Response:
+        serializer = UserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class UserRoleView(APIView):
+    """Admin: change a user's role (PATCH)."""
+
+    permission_classes = [IsAdminRole]
+
+    def patch(self, request: Request, pk: int) -> Response:
+        user = User.objects.filter(pk=pk).first()
+        if user is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = RoleUpdateSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
