@@ -91,6 +91,12 @@ class DocumentService:
         self._storage.delete(document.storage_key)
         self._repository.delete(document.pk)
 
+    def download(self, document: Document) -> bytes:
+        return self._storage.get(document.storage_key)
+
+    def url_for(self, document: Document) -> str:
+        return self._storage.url_for(document.storage_key)
+
 
 def get_document_service() -> DocumentService:
     """Composition root — the ONLY place that knows which backend is real."""

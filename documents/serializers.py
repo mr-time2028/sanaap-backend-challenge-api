@@ -53,3 +53,8 @@ class DocumentUpdateSerializer(serializers.Serializer):
             size=value.size or 0,
         )
         return value
+
+
+class DocumentUrlSerializer(serializers.Serializer):
+    url = serializers.CharField()
+    expires_in = serializers.IntegerField()

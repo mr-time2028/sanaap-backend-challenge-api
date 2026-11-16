@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from documents.permissions import DocumentPermission
 from documents.serializers import (
     DocumentCreateSerializer,
     DocumentSerializer,
     DocumentUpdateSerializer,
+    DocumentUrlSerializer,
 )
 from documents.services import get_document_service
+from documents.storage import URL_TTL
 
 
 class DocumentListCreateView(APIView):
+    permission_classes = [DocumentPermission]
+
     @extend_schema(
         tags=["Documents"],
         summary="List documents",
@@ -51,6 +58,8 @@ class DocumentListCreateView(APIView):
 
 
 class DocumentDetailView(APIView):
+    permission_classes = [DocumentPermission]
+
     @extend_schema(tags=["Documents"], summary="Get document metadata")
     def get(self, request: Request, pk: int) -> Response:
         document = get_document_service().get(pk)
@@ -94,3 +103,48 @@ class DocumentDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         service.delete(document)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class DocumentDownloadView(APIView):
+    permission_classes = [DocumentPermission]
+
+    @extend_schema(
+        tags=["Documents"],
+        summary="Download the document file",
+        description="Streams the stored file — works for every storage backend.",
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def get(self, request: Request, pk: int) -> HttpResponse:
+        service = get_document_service()
+        document = service.get(pk)
+        if document is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return HttpResponse(
+            service.download(document),
+            content_type=document.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{document.file_name}"'
+            },
+        )
+
+
+class DocumentUrlView(APIView):
+    permission_classes = [DocumentPermission]
+
+    @extend_schema(
+        tags=["Documents"],
+        summary="Get a presigned download URL",
+        description="Time-limited URL to fetch the file directly from storage.",
+        responses={200: DocumentUrlSerializer},
+    )
+    def get(self, request: Request, pk: int) -> Response:
+        service = get_document_service()
+        document = service.get(pk)
+        if document is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {
+                "url": service.url_for(document),
+                "expires_in": int(URL_TTL.total_seconds()),
+            }
+        )
