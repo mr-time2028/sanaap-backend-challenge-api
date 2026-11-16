@@ -58,3 +58,13 @@ class DocumentUpdateSerializer(serializers.Serializer):
 class DocumentUrlSerializer(serializers.Serializer):
     url = serializers.CharField()
     expires_in = serializers.IntegerField()
+
+
+class DocumentFilterSerializer(serializers.Serializer):
+    """Query-string filters for the document list."""
+
+    title = serializers.CharField(required=False, allow_blank=True)
+    content_type = serializers.CharField(required=False, allow_blank=True)
+    uploaded_by = serializers.CharField(required=False, allow_blank=True)
+    created_after = serializers.DateField(required=False)
+    created_before = serializers.DateField(required=False)

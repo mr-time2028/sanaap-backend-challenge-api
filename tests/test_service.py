@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
+from accounts.models import User
 from documents.models import Document
-from documents.repositories import InMemoryDocumentRepository
+from documents.repositories import DocumentCriteria, InMemoryDocumentRepository
 from documents.services import DocumentService, get_document_service
 from documents.storage import InMemoryDocumentStorage, LocalStorage, MinioStorage
 
@@ -103,3 +104,32 @@ def test_unknown_storage_backend_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("STORAGE_BACKEND", "s3-unknown")
     with pytest.raises(ImproperlyConfigured):
         get_document_service()
+
+
+def test_list_with_criteria_filters_results() -> None:
+    service = DocumentService(InMemoryDocumentRepository(), InMemoryDocumentStorage())
+    service.create(
+        user=User(username="hamid"),
+        title="Annual report",
+        description="",
+        file_name="a.pdf",
+        content_type="application/pdf",
+        data=b"a",
+    )
+    service.create(
+        user=User(username="sara"),
+        title="Meeting notes",
+        description="",
+        file_name="b.txt",
+        content_type="text/plain",
+        data=b"b",
+    )
+
+    assert [d.title for d in service.list(DocumentCriteria(title="report"))] == [
+        "Annual report"
+    ]
+    assert [d.title for d in service.list(DocumentCriteria(uploaded_by="sara"))] == [
+        "Meeting notes"
+    ]
+    assert len(service.list(DocumentCriteria(content_type="text/plain"))) == 1
+    assert len(service.list()) == 2

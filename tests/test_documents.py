@@ -1,5 +1,7 @@
 """API tests for the documents endpoints (fake storage — no MinIO needed)."""
 
+from datetime import date, timedelta
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
@@ -51,15 +53,21 @@ def upload(
     return auth.post("/api/v1/documents/", {"file": file, "title": title})
 
 
-def seed_document(service: DocumentService) -> int:
+def seed_document(
+    service: DocumentService,
+    *,
+    title: str = "Doc",
+    content_type: str = "text/plain",
+    data: bytes = b"hello",
+) -> int:
     owner = User.objects.get(username="hamid")
     document = service.create(
         user=owner,
-        title="Doc",
+        title=title,
         description="",
         file_name="doc.txt",
-        content_type="text/plain",
-        data=b"hello",
+        content_type=content_type,
+        data=data,
     )
     return document.pk
 
@@ -79,7 +87,7 @@ def test_upload_rejects_disallowed_type(auth: APIClient) -> None:
 
 def test_list_and_retrieve(auth: APIClient) -> None:
     document_id = upload(auth).data["id"]
-    assert len(auth.get("/api/v1/documents/").data) == 1
+    assert len(auth.get("/api/v1/documents/").data["results"]) == 1
     assert auth.get(f"/api/v1/documents/{document_id}/").data["title"] == "Doc"
 
 
@@ -192,3 +200,68 @@ def test_download_unknown_returns_404(viewer: APIClient) -> None:
         viewer.get("/api/v1/documents/999/download/").status_code
         == status.HTTP_404_NOT_FOUND
     )
+
+
+def test_filter_by_title(auth: APIClient, fake_storage: DocumentService) -> None:
+    seed_document(fake_storage, title="Annual report")
+    seed_document(fake_storage, title="Meeting notes")
+    response = auth.get("/api/v1/documents/?title=report")
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["title"] == "Annual report"
+
+
+def test_filter_by_content_type(auth: APIClient, fake_storage: DocumentService) -> None:
+    seed_document(fake_storage, title="A", content_type="application/pdf", data=b"%PDF")
+    seed_document(fake_storage, title="B", content_type="text/plain")
+    response = auth.get("/api/v1/documents/?content_type=text/plain")
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["title"] == "B"
+
+
+def test_filter_by_uploaded_by(auth: APIClient, fake_storage: DocumentService) -> None:
+    seed_document(fake_storage)
+    assert auth.get("/api/v1/documents/?uploaded_by=hamid").data["count"] == 1
+    assert auth.get("/api/v1/documents/?uploaded_by=nobody").data["count"] == 0
+
+
+def test_filter_by_created_date(auth: APIClient, fake_storage: DocumentService) -> None:
+    seed_document(fake_storage)
+    past = (date.today() - timedelta(days=1)).isoformat()
+    today = date.today().isoformat()
+    future = (date.today() + timedelta(days=1)).isoformat()
+    assert auth.get(f"/api/v1/documents/?created_after={past}").data["count"] == 1
+    assert auth.get(f"/api/v1/documents/?created_after={future}").data["count"] == 0
+    assert auth.get(f"/api/v1/documents/?created_before={today}").data["count"] == 1
+    assert auth.get(f"/api/v1/documents/?created_before={past}").data["count"] == 0
+
+
+def test_invalid_date_filter_returns_400(auth: APIClient) -> None:
+    assert (
+        auth.get("/api/v1/documents/?created_after=notadate").status_code
+        == status.HTTP_400_BAD_REQUEST
+    )
+
+
+def test_pagination_shape_and_pages(
+    auth: APIClient, fake_storage: DocumentService
+) -> None:
+    for i in range(3):
+        seed_document(fake_storage, title=f"Doc {i}")
+    response = auth.get("/api/v1/documents/?page=1&page_size=2")
+    assert response.data["count"] == 3
+    assert len(response.data["results"]) == 2
+    assert response.data["next"] is not None
+    assert response.data["previous"] is None
+    page2 = auth.get("/api/v1/documents/?page=2&page_size=2")
+    assert len(page2.data["results"]) == 1
+    assert page2.data["next"] is None
+
+
+def test_page_size_defaults_to_ten(
+    auth: APIClient, fake_storage: DocumentService
+) -> None:
+    for i in range(12):
+        seed_document(fake_storage, title=f"Doc {i}")
+    response = auth.get("/api/v1/documents/")
+    assert len(response.data["results"]) == 10
+    assert response.data["count"] == 12

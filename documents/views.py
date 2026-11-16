@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from documents.pagination import DocumentPagination
 from documents.permissions import DocumentPermission
+from documents.repositories import DocumentCriteria
 from documents.serializers import (
     DocumentCreateSerializer,
+    DocumentFilterSerializer,
     DocumentSerializer,
     DocumentUpdateSerializer,
     DocumentUrlSerializer,
@@ -27,11 +30,25 @@ class DocumentListCreateView(APIView):
     @extend_schema(
         tags=["Documents"],
         summary="List documents",
+        description="Filters: title (contains), content_type, uploaded_by, created_after, "
+        "created_before (ISO dates). Pagination: page, page_size (default 10, max 100). "
+        "Response: {count, next, previous, results}.",
+        parameters=[
+            DocumentFilterSerializer,
+            OpenApiParameter("page", int, description="Page number"),
+            OpenApiParameter("page_size", int, description="Items per page (max 100)"),
+        ],
         responses=DocumentSerializer(many=True),
     )
     def get(self, request: Request) -> Response:
-        documents = get_document_service().list()
-        return Response(DocumentSerializer(documents, many=True).data)
+        filters = DocumentFilterSerializer(data=request.query_params)
+        filters.is_valid(raise_exception=True)
+        criteria = DocumentCriteria(**filters.validated_data)
+        documents = get_document_service().list(criteria)
+        paginator = DocumentPagination()
+        page = paginator.paginate_queryset(documents, request)
+        serializer = DocumentSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     @extend_schema(
         tags=["Documents"],

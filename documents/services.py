@@ -10,7 +10,11 @@ from typing import Any
 from django.core.exceptions import ImproperlyConfigured
 
 from documents.models import Document
-from documents.repositories import DjangoDocumentRepository, DocumentRepository
+from documents.repositories import (
+    DjangoDocumentRepository,
+    DocumentCriteria,
+    DocumentRepository,
+)
 from documents.storage import DocumentStorage, LocalStorage, MinioStorage
 from documents.validation import validate_upload
 
@@ -57,8 +61,10 @@ class DocumentService:
     def get(self, document_id: int) -> Document | None:
         return self._repository.get_by_id(document_id)
 
-    def list(self) -> list[Document]:
-        return self._repository.list_all()
+    def list(self, criteria: DocumentCriteria | None = None) -> list[Document]:
+        if criteria is None:
+            return self._repository.list_all()
+        return self._repository.search(criteria)
 
     def update(
         self,

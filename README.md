@@ -188,7 +188,7 @@ schema at `/api/schema/`.
 | POST | `/api/v1/users/` | admin | create a user (with role) |
 | PATCH | `/api/v1/users/<id>/role/` | admin | change a user's role |
 | POST | `/api/v1/documents/` | Bearer | upload a document (multipart: file, title, description) |
-| GET | `/api/v1/documents/` | Bearer | list documents |
+| GET | `/api/v1/documents/` | Bearer | list documents (filter + pagination) |
 | GET | `/api/v1/documents/<id>/` | Bearer | document metadata |
 | PATCH | `/api/v1/documents/<id>/` | Bearer | update title, description and/or file |
 | DELETE | `/api/v1/documents/<id>/` | Bearer | delete document + stored file |
@@ -200,6 +200,11 @@ endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
 `GET /api/v1/documents/<id>/url/` returns a time-limited presigned URL so
 clients can fetch the file directly from MinIO without proxying through the
 app.
+
+`GET /api/v1/documents/` supports filtering (`?title=`, `?content_type=`,
+`?uploaded_by=`, `?created_after=`, `?created_before=` — ISO dates, inclusive) and
+pagination (`?page=`, `?page_size=` — default 10, max 100). List responses
+are wrapped as `{count, next, previous, results}`.
 
 ### Roles
 
