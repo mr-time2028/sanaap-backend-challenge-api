@@ -1,5 +1,6 @@
 """Service tests — InMemory fakes: no database, no MinIO."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -133,3 +134,21 @@ def test_list_with_criteria_filters_results() -> None:
     ]
     assert len(service.list(DocumentCriteria(content_type="text/plain"))) == 1
     assert len(service.list()) == 2
+
+
+def test_compute_checksum_hashes_file_content() -> None:
+    service = DocumentService(InMemoryDocumentRepository(), InMemoryDocumentStorage())
+    document = service.create(
+        user=None,
+        title="Doc",
+        description="",
+        file_name="doc.txt",
+        content_type="text/plain",
+        data=b"body",
+    )
+    assert service.compute_checksum(document.pk) == hashlib.sha256(b"body").hexdigest()
+
+
+def test_compute_checksum_missing_document_returns_empty() -> None:
+    service = DocumentService(InMemoryDocumentRepository(), InMemoryDocumentStorage())
+    assert service.compute_checksum(999) == ""

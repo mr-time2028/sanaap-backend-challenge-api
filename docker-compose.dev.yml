@@ -23,6 +23,7 @@ services:
   minio:
     container_name: "dms_dev_minio"
     image: bitnamilegacy/minio:latest
+    user: "0:0" 
     command: ["minio", "server", "/opt/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
     environment:
       MINIO_BROWSER: ${MINIO_BROWSER:-on}
@@ -34,7 +35,22 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - miniodata:/bitnami/minio/data
+  
+  redis:
+    container_name: "dms_dev_redis"
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
   miniodata:
+  redisdata:

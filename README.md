@@ -64,14 +64,17 @@ docker compose exec web python manage.py shell -c "from accounts.models import U
 
 ### 6. Run the server
 
-**Development** — app in the venv, against the dev database:
+**Development** — app in the venv, against the dev database (run the
+background worker in a second terminal):
 
 ```bash
 make run
+celery -A config worker -l info
 ```
 
 **Production** — full stack from the default compose file (`docker-compose.yml`,
-project `dms-prod`): app container (auto-migrates on start) + PostgreSQL:
+project `dms-prod`): app container (auto-migrates on start) + a Celery worker +
+PostgreSQL + MinIO + Redis:
 
 ```bash
 docker compose up --build
@@ -148,6 +151,7 @@ create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
 | Command | What it does |
 |---------|--------------|
 | `make run` | start the dev server → http://127.0.0.1:8000 |
+| `celery -A config worker -l info` | run the background worker (development) |
 | `make migrate` | apply database migrations |
 | `make makemigrations` | create new migrations |
 | `make test` | run the test suite (pytest) |
@@ -206,6 +210,10 @@ app.
 pagination (`?page=`, `?page_size=` — default 10, max 100). List responses
 are wrapped as `{count, next, previous, results}`.
 
+Uploads are processed in the background: a Celery worker computes the file's
+SHA-256 checksum, which appears in the document metadata (`checksum`) shortly
+after the upload (immediately in tests).
+
 ### Roles
 
 | Role | Can |
@@ -234,7 +242,7 @@ are wrapped as `{count, next, previous, results}`.
 
 ## Project structure
 
-- `config/` — Django project (settings, urls)
+- `config/` — Django project (settings, urls, Celery app)
 - `accounts/` — user model with roles; JWT auth, password reset and user
   management (views, serializers, services)
 - `documents/` — model, repository (Protocol + ORM adapter), storage backends
