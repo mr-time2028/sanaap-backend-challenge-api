@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
+    "daphne",
+    "channels",
 ]
 
 MIDDLEWARE = [
@@ -228,3 +230,18 @@ MINIO_ENDPOINT = config("MINIO_ENDPOINT", default="127.0.0.1:9000")
 MINIO_ROOT_USER = config("MINIO_ROOT_USER", default="minioadmin")
 MINIO_ROOT_PASSWORD = config("MINIO_ROOT_PASSWORD", default="minioadmin")
 MINIO_BUCKET = config("MINIO_BUCKET", default="documents")
+
+
+# --- Channels (WebSocket) ---
+# In-memory by default (dev + tests, single process); Redis when configured
+# (production runs several workers that must share the layer).
+CHANNEL_LAYER_REDIS_URL = config("CHANNEL_LAYER_REDIS_URL", default="")
+if CHANNEL_LAYER_REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [CHANNEL_LAYER_REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
