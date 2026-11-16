@@ -1,9 +1,9 @@
-"""Pagination for the document list."""
+"""Standard pagination for list endpoints."""
 
 from rest_framework.pagination import PageNumberPagination
 
 
-class DocumentPagination(PageNumberPagination):
+class StandardPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = "page_size"
     max_page_size = 100

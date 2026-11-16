@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from documents.pagination import DocumentPagination
+from config.pagination import StandardPagination
 from documents.permissions import DocumentPermission
 from documents.repositories import DocumentCriteria
 from documents.serializers import (
@@ -46,7 +46,7 @@ class DocumentListCreateView(APIView):
         filters.is_valid(raise_exception=True)
         criteria = DocumentCriteria(**filters.validated_data)
         documents = get_document_service().list(criteria)
-        paginator = DocumentPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(documents, request)
         serializer = DocumentSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
