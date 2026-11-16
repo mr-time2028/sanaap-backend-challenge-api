@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from audit.observer import AuditObserver
@@ -25,7 +25,7 @@ from documents.validation import validate_upload
 # = a DocumentStorage class + one entry here.
 STORAGE_BACKENDS: dict[str, Callable[[], DocumentStorage]] = {
     "minio": MinioStorage,
-    "local": lambda: LocalStorage(Path(os.getenv("LOCAL_STORAGE_PATH", "var/files"))),
+    "local": lambda: LocalStorage(Path(settings.LOCAL_STORAGE_PATH)),
 }
 
 
@@ -165,7 +165,7 @@ class DocumentService:
 
 def get_document_service() -> DocumentService:
     """Composition root — the ONLY place that knows which backend is real."""
-    backend = os.getenv("STORAGE_BACKEND", "minio")
+    backend = settings.STORAGE_BACKEND
     if backend not in STORAGE_BACKENDS:
         raise ImproperlyConfigured(
             f"Unknown STORAGE_BACKEND {backend!r} — expected one of {sorted(STORAGE_BACKENDS)}."

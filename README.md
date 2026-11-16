@@ -25,7 +25,10 @@ cp .env.example .env
 ```
 
 Open `.env` and adjust if needed (`SECRET_KEY`, JWT token lifetimes,
-`DEFAULT_FROM_EMAIL`, …). The database defaults to **PostgreSQL** running in
+`DEFAULT_FROM_EMAIL`, …). Generate a real secret key with
+`python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))"`
+(alphanumeric + `-_` only — quotes and `#`/`$` break `.env` parsing).
+The database defaults to **PostgreSQL** running in
 Docker (next step); set `DB_ENGINE=sqlite3` for zero-setup SQLite instead.
 
 ### 3. Start the development database
@@ -35,8 +38,8 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 The **development** compose file (`docker-compose.dev.yml`, project
-`dms-dev`) starts PostgreSQL and MinIO — the app runs in your venv. Redis
-joins this file at its feature level. Port 5432 already taken?
+`dms-dev`) starts PostgreSQL, MinIO and Redis — the app runs in your venv.
+Port 5432 already taken?
 Change the left side to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
 
 ### 4. Create the database tables
@@ -73,18 +76,20 @@ celery -A config worker -l info
 ```
 
 **Production** — full stack from the default compose file (`docker-compose.yml`,
-project `dms-prod`): app container (auto-migrates on start) + a Celery worker +
-PostgreSQL + MinIO + Redis:
+project `dms-prod`): nginx + gunicorn app container (auto-migrates on start) +
+a Celery worker + PostgreSQL + MinIO + Redis:
 
 ```bash
 docker compose up --build
 ```
 
-→ http://127.0.0.1:8000
+→ http://localhost:8080 — nginx is the entry point (`NGINX_PORT` in `.env`)
 
 ### 7. Work with the API
 
-Log in with the admin credentials to get a JWT pair:
+Log in with the admin credentials to get a JWT pair (examples use the dev
+server at port 8000; in production, replace it with nginx at
+`http://localhost:8080`):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/login/ \
@@ -112,15 +117,16 @@ make check      # lint + types + tests
 | | Development | Production |
 |---|---|---|
 | Compose file | `docker-compose.dev.yml` (`dms-dev`) | `docker-compose.yml` (`dms-prod`) |
-| App | runs in your venv (`make run`) | `web` container from `Dockerfile` |
+| App | runs in your venv (`make run`) | `web` container (gunicorn) behind `nginx` |
+| Entry point | http://127.0.0.1:8000 | http://localhost:8080 (`NGINX_PORT`) |
 | Database | `postgres` container, port 5432 published | `postgres` container, internal network only |
 | Migrations | `python manage.py migrate` | automatic on container start |
 | Start | `docker compose -f docker-compose.dev.yml up -d` | `docker compose up --build` |
 | Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
 
 The two projects are isolated (separate volumes) and can run at the same time.
-Redis joins **both** files at its feature level; nginx joins the production
-file. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
+In production, nginx is the only public entry point: it proxies to gunicorn
+and serves `/static/`. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
 a local-filesystem backend is available via `STORAGE_BACKEND=local` — MinIO
 console: http://127.0.0.1:9001).
 
@@ -132,11 +138,19 @@ Only `.env` changes per machine — the compose files are machine-independent:
 git clone <repo> && cd sanaap-backend-challenge-api
 cp .env.example .env
 # set SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS=<your domain>
-# (and WEB_PORT in .env if port 8000 is taken)
+# (and NGINX_PORT in .env if port 8080 is taken)
 docker compose up --build -d
 ```
 
 Redeploying: `git pull && docker compose up --build -d`.
+
+**HTTPS:** point DNS at the server, then `certbot --nginx -d yourdomain.com` —
+TLS terminates at nginx (the ready-made 443 block is in `nginx/nginx.conf`).
+Afterwards flip `SECURE_SSL_REDIRECT=True`, `SESSION_COOKIE_SECURE=True` and
+`CSRF_COOKIE_SECURE=True` in `.env` (keep them `False` for local HTTP —
+otherwise Django redirects forever), and set
+`CSRF_TRUSTED_ORIGINS=https://yourdomain.com` (the local default
+`http://localhost:8080` keeps session-form logins working behind the proxy).
 
 ### Running without Docker
 
@@ -161,8 +175,9 @@ create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
 | `make check` | **all quality gates** (lint + types + tests) |
 | `make help` | list all available commands |
 | `docker compose -f docker-compose.dev.yml up -d` | start the dev database + MinIO |
-| `docker compose up --build` | build + run the production stack |
+| `docker compose up --build` | build + run the production stack (nginx at :8080) |
 | `docker compose logs -f web` | production app logs |
+| `docker compose logs -f nginx` | production proxy logs |
 | `docker compose exec web <cmd>` | run a command in the production app |
 | `docker compose down` | stop production (`-v` also wipes the db volume) |
 
@@ -243,13 +258,13 @@ notifications will subscribe to the same events).
 | 8 | `feature/filter-pagination` | filtering & pagination |
 | 9 | `feature/background-tasks` | Celery background tasks (Redis joins Compose) |
 | 10 | `feature/audit-logging` | audit logging (Observer) |
-| 11 | `feature/nginx-gunicorn` | production serving |
+| 11 | `feature/nginx-gunicorn` | nginx reverse proxy + gunicorn |
 | 12 | `feature/websocket-notifications` | WebSocket notifications (Channels) |
 | 13 | `feature/final-qa` | coverage gate, release to `main` (`v1.0.0`) |
 
 ## Project structure
 
-- `config/` — Django project (settings, urls, Celery app)
+- `config/` — Django project (settings, urls, Celery app, shared pagination)
 - `accounts/` — user model with roles; JWT auth, password reset and user
   management (views, serializers, services)
 - `documents/` — model, repository (Protocol + ORM adapter), storage backends
@@ -257,10 +272,13 @@ notifications will subscribe to the same events).
   domain events (Observer seam), service layer, API
 - `audit/` — audit trail model + Observer recorder (who changed what, when)
 - `tests/` — pytest suite
-- `docker-compose.yml` — production: app + PostgreSQL + MinIO (nginx-ready)
-- `docker-compose.dev.yml` — development: PostgreSQL + MinIO (app runs in
-  venv; Redis joins later)
-- `Dockerfile` / `entrypoint.sh` — container image with auto-migrations
+- `docker-compose.yml` — production: nginx + app + worker + PostgreSQL +
+  MinIO + Redis
+- `docker-compose.dev.yml` — development: PostgreSQL + MinIO + Redis (app
+  runs in venv)
+- `nginx/nginx.conf` — reverse proxy: gunicorn + static files
+- `Dockerfile` / `entrypoint.sh` — container image (gunicorn; auto-migrations
+  + static collection)
 
 ## References
 

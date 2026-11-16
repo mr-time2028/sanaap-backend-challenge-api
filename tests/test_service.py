@@ -2,6 +2,7 @@
 
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -93,16 +94,14 @@ def test_minio_is_the_default_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(get_document_service()._storage, MinioStorage)
 
 
-def test_local_backend_is_wired_when_configured(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("STORAGE_BACKEND", "local")
-    monkeypatch.setenv("LOCAL_STORAGE_PATH", str(tmp_path))
+def test_local_backend_is_wired_when_configured(settings: Any, tmp_path: Path) -> None:
+    settings.STORAGE_BACKEND = "local"
+    settings.LOCAL_STORAGE_PATH = str(tmp_path)
     assert isinstance(get_document_service()._storage, LocalStorage)
 
 
-def test_unknown_storage_backend_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("STORAGE_BACKEND", "s3-unknown")
+def test_unknown_storage_backend_is_rejected(settings: Any) -> None:
+    settings.STORAGE_BACKEND = "s3-unknown"
     with pytest.raises(ImproperlyConfigured):
         get_document_service()
 

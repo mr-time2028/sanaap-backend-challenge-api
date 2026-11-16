@@ -10,30 +10,26 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
-import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from decouple import Csv, config
 from django.core.exceptions import ImproperlyConfigured
-from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Local environment (.env) — never committed; see .env.example
-load_dotenv(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "true").lower() in {"1", "true", "yes"}
+DEBUG = config("DEBUG", "true").lower() in {"1", "true", "yes"}
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
 
@@ -97,17 +93,17 @@ ENGINES: dict[str, dict[str, Any]] = {
     },
     "postgresql": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "dms"),
-        "USER": os.getenv("DB_USER", "dms"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "5432"),
+        "NAME": config("DB_NAME", "dms"),
+        "USER": config("DB_USER", "dms"),
+        "PASSWORD": config("DB_PASSWORD", ""),
+        "HOST": config("DB_HOST", "127.0.0.1"),
+        "PORT": config("DB_PORT", "5432"),
     },
     # A new engine = a new key here + its driver in requirements.txt, e.g.
     # "mysql": {"ENGINE": "django.db.backends.mysql", ...same DB_* keys...},
 }
 
-_db_engine = os.getenv("DB_ENGINE", "sqlite3")
+_db_engine = config("DB_ENGINE", "sqlite3")
 if _db_engine not in ENGINES:
     raise ImproperlyConfigured(
         f"Unknown DB_ENGINE {_db_engine!r} — expected one of {sorted(ENGINES)}."
@@ -150,6 +146,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # Email
@@ -177,10 +174,10 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(
-        minutes=int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", "30"))
+        minutes=int(config("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", "30"))
     ),
     "REFRESH_TOKEN_LIFETIME": timedelta(
-        days=int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))
+        days=int(config("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))
     ),
 }
 
@@ -204,13 +201,30 @@ SPECTACULAR_SETTINGS = {
 MAILERS = {
     "default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"},
 }
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@dms.local")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", "noreply@dms.local")
 
 # --- Celery / background tasks ---
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
-CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() in {
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", "False").lower() in {
     "1",
     "true",
     "yes",
 }
+
+# --- Production security (flip to True only behind real HTTPS) ---
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
+SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=False, cast=bool)
+CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=False, cast=bool)
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS", default="http://localhost:8080", cast=Csv()
+)
+
+# --- Document storage ---
+STORAGE_BACKEND = config("STORAGE_BACKEND", default="minio")
+LOCAL_STORAGE_PATH = config("LOCAL_STORAGE_PATH", default="var/files")
+MINIO_ENDPOINT = config("MINIO_ENDPOINT", default="127.0.0.1:9000")
+MINIO_ROOT_USER = config("MINIO_ROOT_USER", default="minioadmin")
+MINIO_ROOT_PASSWORD = config("MINIO_ROOT_PASSWORD", default="minioadmin")
+MINIO_BUCKET = config("MINIO_BUCKET", default="documents")

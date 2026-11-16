@@ -6,13 +6,13 @@ entry in services.STORAGE_BACKENDS."""
 from __future__ import annotations
 
 import io
-import os
 import uuid
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from django.conf import settings
 from minio import Minio
 
 URL_TTL = timedelta(hours=1)
@@ -29,9 +29,9 @@ class DocumentStorage(Protocol):
 def _minio_client() -> Minio:
     """Singleton client — created once per process, reused."""
     return Minio(
-        os.getenv("MINIO_ENDPOINT", "127.0.0.1:9000"),
-        access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
-        secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ROOT_USER,
+        secret_key=settings.MINIO_ROOT_PASSWORD,
         secure=False,
     )
 
@@ -41,7 +41,7 @@ class MinioStorage:
 
     def __init__(self) -> None:
         self._client = _minio_client()
-        self._bucket = os.getenv("MINIO_BUCKET", "documents")
+        self._bucket = settings.MINIO_BUCKET
 
     def _ensure_bucket(self) -> None:
         if not self._client.bucket_exists(self._bucket):
