@@ -1,4 +1,6 @@
 # Ruff configuration — keep it minimal.
-[lint.per-file-ignores]
-# Machine-generated Django migration files
-"*/migrations/*" = ["RUF012"]
+[lint]
+# RUF012 (mutable class attribute) misfires on Django/DRF declarative config:
+# class attributes like permission_classes or Meta.fields are configuration,
+# never mutated at runtime. Its ClassVar fix also fights DRF's type stubs.
+ignore = ["RUF012"]
