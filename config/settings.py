@@ -13,7 +13,9 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -86,12 +88,33 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    "default": {
+# Database — pick the engine with DB_ENGINE (default: PostgreSQL for the dev
+# compose db; set sqlite3 for zero-setup fallback). Server-style engines share
+# the DB_* variables; engine-specific SQL quirks live in the repository
+# adapters (documents/repositories.py) — this block is only wiring.
+ENGINES: dict[str, dict[str, Any]] = {
+    "sqlite3": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-    }
+    },
+    "postgresql": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "dms"),
+        "USER": os.getenv("DB_USER", "dms"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+    },
+    # A new engine = a new key here + its driver in requirements.txt, e.g.
+    # "mysql": {"ENGINE": "django.db.backends.mysql", ...same DB_* keys...},
 }
+
+_db_engine = os.getenv("DB_ENGINE", "sqlite3")
+if _db_engine not in ENGINES:
+    raise ImproperlyConfigured(
+        f"Unknown DB_ENGINE {_db_engine!r} — expected one of {sorted(ENGINES)}."
+    )
+DATABASES = {"default": ENGINES[_db_engine]}
 
 
 # Password validation
