@@ -25,7 +25,10 @@ cp .env.example .env
 ```
 
 Open `.env` and adjust if needed (`SECRET_KEY`, JWT token lifetimes,
-`DEFAULT_FROM_EMAIL`, …). The database defaults to **PostgreSQL** running in
+`DEFAULT_FROM_EMAIL`, …). Generate a real secret key with
+`python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))"`
+(alphanumeric + `-_` only — quotes and `#`/`$` break `.env` parsing).
+The database defaults to **PostgreSQL** running in
 Docker (next step); set `DB_ENGINE=sqlite3` for zero-setup SQLite instead.
 
 ### 3. Start the development database
@@ -145,7 +148,9 @@ Redeploying: `git pull && docker compose up --build -d`.
 TLS terminates at nginx (the ready-made 443 block is in `nginx/nginx.conf`).
 Afterwards flip `SECURE_SSL_REDIRECT=True`, `SESSION_COOKIE_SECURE=True` and
 `CSRF_COOKIE_SECURE=True` in `.env` (keep them `False` for local HTTP —
-otherwise Django redirects forever).
+otherwise Django redirects forever), and set
+`CSRF_TRUSTED_ORIGINS=https://yourdomain.com` (the local default
+`http://localhost:8080` keeps session-form logins working behind the proxy).
 
 ### Running without Docker
 
