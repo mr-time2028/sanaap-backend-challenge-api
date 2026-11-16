@@ -171,6 +171,10 @@ touched. Run them before every push; `make check` is the full gate.
 
 Base URL: `/api/v1/`. All endpoints return JSON.
 
+**Interactive documentation:** Swagger UI at `/api/docs/` — try every endpoint
+with the **Authorize** button (paste a Bearer token from login). Raw OpenAPI
+schema at `/api/schema/`.
+
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/api/v1/auth/login/` | — | obtain JWT access + refresh pair |
