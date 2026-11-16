@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
 ]
 
 MIDDLEWARE = [
@@ -170,6 +171,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "auth": "5/min",
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 SIMPLE_JWT = {
@@ -179,6 +181,22 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(
         days=int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))
     ),
+}
+
+# OpenAPI/Swagger documentation (schema at /api/schema/, UI at /api/docs/).
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Sanaap DMS API",
+    "DESCRIPTION": (
+        "Document Management System API — JWT authentication, "
+        "role-based access control and document management."
+    ),
+    "VERSION": "1.0.0",
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "jwtAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+        }
+    },
+    "SECURITY": [{"jwtAuth": []}],
 }
 
 # Dev mailer — prints emails to the console (swap BACKEND for SMTP in production).
