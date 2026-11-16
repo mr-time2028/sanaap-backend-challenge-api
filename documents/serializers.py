@@ -19,6 +19,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "file_name",
             "content_type",
             "size",
+            "checksum",
             "storage_key",
             "uploaded_by",
             "created_at",

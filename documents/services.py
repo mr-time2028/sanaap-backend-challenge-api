@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -102,6 +103,15 @@ class DocumentService:
 
     def url_for(self, document: Document) -> str:
         return self._storage.url_for(document.storage_key)
+
+    def compute_checksum(self, document_id: int) -> str:
+        document = self.get(document_id)
+        if document is None:
+            return ""
+        checksum = hashlib.sha256(self._storage.get(document.storage_key)).hexdigest()
+        document.checksum = checksum
+        self._repository.update(document)
+        return checksum
 
 
 def get_document_service() -> DocumentService:

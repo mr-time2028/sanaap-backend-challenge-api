@@ -22,6 +22,7 @@ from documents.serializers import (
 )
 from documents.services import get_document_service
 from documents.storage import URL_TTL
+from documents.tasks import process_document
 
 
 class DocumentListCreateView(APIView):
@@ -69,6 +70,7 @@ class DocumentListCreateView(APIView):
             content_type=file.content_type or "",
             data=file.read(),
         )
+        process_document.delay(document.pk)
         return Response(
             DocumentSerializer(document).data, status=status.HTTP_201_CREATED
         )
@@ -108,6 +110,8 @@ class DocumentDetailView(APIView):
             content_type=(file.content_type or "") if file is not None else None,
             data=file.read() if file is not None else None,
         )
+        if file is not None:
+            process_document.delay(updated.pk)
         return Response(DocumentSerializer(updated).data)
 
     @extend_schema(

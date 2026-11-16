@@ -12,6 +12,7 @@ class Document(models.Model):
     file_name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
+    checksum = models.CharField(max_length=64, blank=True, default="")
     storage_key = models.CharField(max_length=255, unique=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
