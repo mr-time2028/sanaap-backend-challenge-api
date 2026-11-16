@@ -10,6 +10,7 @@ from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
 
+from audit.observer import AuditObserver
 from documents.events import DocumentEvent, DocumentObserver
 from documents.models import Document
 from documents.repositories import (
@@ -169,4 +170,8 @@ def get_document_service() -> DocumentService:
         raise ImproperlyConfigured(
             f"Unknown STORAGE_BACKEND {backend!r} — expected one of {sorted(STORAGE_BACKENDS)}."
         )
-    return DocumentService(DjangoDocumentRepository(), STORAGE_BACKENDS[backend]())
+    return DocumentService(
+        DjangoDocumentRepository(),
+        STORAGE_BACKENDS[backend](),
+        observers=[AuditObserver()],
+    )
