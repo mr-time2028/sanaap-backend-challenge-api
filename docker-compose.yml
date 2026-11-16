@@ -19,6 +19,21 @@ services:
       retries: 5
     # No published ports — the app reaches postgres over the compose network.
 
+  minio:
+    container_name: "dms_minio"
+    image: bitnamilegacy/minio:latest
+    command: ["minio", "server", "/opt/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_BROWSER: ${MINIO_BROWSER:-on}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKETS: ${MINIO_DEFAULT_BUCKET:-documents}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+
   web:
     container_name: "dms_web"
     build: .
@@ -32,3 +47,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:

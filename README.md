@@ -35,8 +35,8 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 The **development** compose file (`docker-compose.dev.yml`, project
-`dms-dev`) starts PostgreSQL only — the app runs in your venv. Redis and
-MinIO join this file at their feature levels. Port 5432 already taken?
+`dms-dev`) starts PostgreSQL and MinIO — the app runs in your venv. Redis
+joins this file at its feature level. Port 5432 already taken?
 Change the left side to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
 
 ### 4. Create the database tables
@@ -116,8 +116,10 @@ make check      # lint + types + tests
 | Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
 
 The two projects are isolated (separate volumes) and can run at the same time.
-Redis and MinIO will join **both** files at their feature levels; nginx joins
-the production file.
+Redis joins **both** files at its feature level; nginx joins the production
+file. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
+a local-filesystem backend is available via `STORAGE_BACKEND=local` — MinIO
+console: http://127.0.0.1:9001).
 
 ### Deploying to a server
 
@@ -154,7 +156,7 @@ create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
 | `make typecheck` | static type check (mypy) |
 | `make check` | **all quality gates** (lint + types + tests) |
 | `make help` | list all available commands |
-| `docker compose -f docker-compose.dev.yml up -d` | start the dev database |
+| `docker compose -f docker-compose.dev.yml up -d` | start the dev database + MinIO |
 | `docker compose up --build` | build + run the production stack |
 | `docker compose logs -f web` | production app logs |
 | `docker compose exec web <cmd>` | run a command in the production app |
@@ -185,6 +187,11 @@ schema at `/api/schema/`.
 | GET | `/api/v1/users/` | admin | list users |
 | POST | `/api/v1/users/` | admin | create a user (with role) |
 | PATCH | `/api/v1/users/<id>/role/` | admin | change a user's role |
+| POST | `/api/v1/documents/` | Bearer | upload a document (multipart: file, title, description) |
+| GET | `/api/v1/documents/` | Bearer | list documents |
+| GET | `/api/v1/documents/<id>/` | Bearer | document metadata |
+| PATCH | `/api/v1/documents/<id>/` | Bearer | update title, description and/or file |
+| DELETE | `/api/v1/documents/<id>/` | Bearer | delete document + stored file |
 
 Authenticate by sending `Authorization: Bearer <access>` on protected
 endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
@@ -220,11 +227,12 @@ endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
 - `config/` — Django project (settings, urls)
 - `accounts/` — user model with roles; JWT auth, password reset and user
   management (views, serializers, services)
-- `documents/` — document model + repository (Protocol + Django ORM adapter)
+- `documents/` — model, repository (Protocol + ORM adapter), storage backends
+  (MinIO/local behind a Protocol), validation, service layer, API
 - `tests/` — pytest suite
-- `docker-compose.yml` — production: app + PostgreSQL (nginx-ready)
-- `docker-compose.dev.yml` — development: PostgreSQL (app runs in venv;
-  Redis & MinIO join later)
+- `docker-compose.yml` — production: app + PostgreSQL + MinIO (nginx-ready)
+- `docker-compose.dev.yml` — development: PostgreSQL + MinIO (app runs in
+  venv; Redis joins later)
 - `Dockerfile` / `entrypoint.sh` — container image with auto-migrations
 
 ## References
