@@ -1,5 +1,5 @@
-# Production: app (from Dockerfile, auto-migrates on start) + PostgreSQL.
-# nginx joins this file at its feature level.
+# Production: nginx + app + Celery worker + PostgreSQL + MinIO + Redis.
+# The app (from Dockerfile) auto-migrates on start; nginx is the only entry point.
 name: dms-prod
 
 services:
@@ -22,25 +22,22 @@ services:
   minio:
     container_name: "dms_minio"
     image: bitnamilegacy/minio:latest
-    user: "0:0" 
-    command: ["minio", "server", "/opt/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
+    user: "0:0"
+    command: ["/opt/bitnami/minio/bin/minio", "server", "/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
     environment:
       MINIO_BROWSER: ${MINIO_BROWSER:-on}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_BUCKETS: ${MINIO_DEFAULT_BUCKET:-documents}
     ports:
       - "${MINIO_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - miniodata:/bitnami/minio/data
-  
+
   redis:
     container_name: "dms_redis"
     image: redis:7-alpine
     command: redis-server --appendonly yes --appendfsync everysec
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -48,12 +45,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    # No published ports in production — only the app and worker use it.
 
   web:
     container_name: "dms_web"
     build: .
-    ports:
-      - "${WEB_PORT:-8000}:8000"
     env_file:
       - .env
     expose:
@@ -63,7 +59,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-  
+      redis:
+        condition: service_healthy
+
+  worker:
+    container_name: "dms_worker"
+    build: .
+    command: celery -A config worker -l info
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   nginx:
     container_name: "dms_nginx"
     image: nginx:1.27-alpine
