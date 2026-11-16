@@ -13,6 +13,8 @@ mypy_extensions==1.2.0
 packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
+psycopg==3.3.9
+psycopg-binary==3.3.9
 Pygments==2.21.0
 PyJWT==2.15.1
 pytest==9.2.0
