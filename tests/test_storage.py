@@ -1,6 +1,7 @@
 """Tests for the storage seam: fakes, local backend, MinIO facade with a fake client."""
 
 import io
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,12 @@ def test_fake_delete_removes_object() -> None:
         storage.get(key)
 
 
+def test_fake_url_for() -> None:
+    storage = InMemoryDocumentStorage()
+    key = storage.put(data=b"x", file_name="a.txt", content_type="text/plain")
+    assert storage.url_for(key) == f"memory://{key}"
+
+
 def test_local_storage_roundtrip(tmp_path: Path) -> None:
     storage = LocalStorage(tmp_path)
     key = storage.put(data=b"hello", file_name="a.txt", content_type="text/plain")
@@ -36,6 +43,12 @@ def test_local_storage_roundtrip(tmp_path: Path) -> None:
     storage.delete(key)
     with pytest.raises(FileNotFoundError):
         storage.get(key)
+
+
+def test_local_url_for_returns_file_uri(tmp_path: Path) -> None:
+    storage = LocalStorage(tmp_path)
+    key = storage.put(data=b"x", file_name="a.txt", content_type="text/plain")
+    assert storage.url_for(key).startswith("file://")
 
 
 class FakeResponse:
@@ -64,6 +77,7 @@ class FakeMinio:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.removed: list[tuple[str, str]] = []
         self.responses: list[FakeResponse] = []
+        self.presigned: list[tuple[str, str, timedelta]] = []
 
     def bucket_exists(self, bucket: str) -> bool:
         return bucket in self.buckets
@@ -84,6 +98,10 @@ class FakeMinio:
     def remove_object(self, bucket: str, key: str) -> None:
         self.removed.append((bucket, key))
         self.objects.pop((bucket, key), None)
+
+    def presigned_get_object(self, bucket: str, key: str, expires: timedelta) -> str:
+        self.presigned.append((bucket, key, expires))
+        return f"https://minio.test/{bucket}/{key}?X-Amz-Expires={int(expires.total_seconds())}"
 
 
 @pytest.fixture
@@ -128,3 +146,14 @@ def test_minio_delete_removes_object(
     key = storage.put(data=b"payload", file_name="a.txt", content_type="text/plain")
     storage.delete(key)
     assert fake.removed == [("documents", key)]
+
+
+def test_minio_url_for_presigns(minio_storage: tuple[MinioStorage, FakeMinio]) -> None:
+    storage, fake = minio_storage
+    key = storage.put(data=b"payload", file_name="a.txt", content_type="text/plain")
+    url = storage.url_for(key)
+    assert "documents" in url
+    assert key in url
+    bucket, presigned_key, expires = fake.presigned[0]
+    assert (bucket, presigned_key) == ("documents", key)
+    assert expires == timedelta(hours=1)

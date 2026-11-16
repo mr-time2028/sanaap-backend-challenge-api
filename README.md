@@ -192,17 +192,22 @@ schema at `/api/schema/`.
 | GET | `/api/v1/documents/<id>/` | Bearer | document metadata |
 | PATCH | `/api/v1/documents/<id>/` | Bearer | update title, description and/or file |
 | DELETE | `/api/v1/documents/<id>/` | Bearer | delete document + stored file |
+| GET | `/api/v1/documents/<id>/download/` | Bearer | download the file |
+| GET | `/api/v1/documents/<id>/url/` | Bearer | presigned download URL (1 hour) |
 
 Authenticate by sending `Authorization: Bearer <access>` on protected
 endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
+`GET /api/v1/documents/<id>/url/` returns a time-limited presigned URL so
+clients can fetch the file directly from MinIO without proxying through the
+app.
 
 ### Roles
 
 | Role | Can |
 |------|-----|
-| `admin` | everything — incl. user management and deleting documents |
-| `editor` | upload and update documents/images |
-| `viewer` | download documents only |
+| `admin` | everything — user management, upload, update, delete, download |
+| `editor` | upload and update documents/images; download — **no delete** |
+| `viewer` | list and download documents only |
 
 ## How the project is built — level by level
 
@@ -228,7 +233,8 @@ endpoints. Auth endpoints are rate-limited (5 requests/minute per client).
 - `accounts/` — user model with roles; JWT auth, password reset and user
   management (views, serializers, services)
 - `documents/` — model, repository (Protocol + ORM adapter), storage backends
-  (MinIO/local behind a Protocol), validation, service layer, API
+  (MinIO/local behind a Protocol), validation, role policies (Strategy),
+  service layer, API
 - `tests/` — pytest suite
 - `docker-compose.yml` — production: app + PostgreSQL + MinIO (nginx-ready)
 - `docker-compose.dev.yml` — development: PostgreSQL + MinIO (app runs in
