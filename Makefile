@@ -27,3 +27,6 @@ migrate:  ## Apply database migrations
 
 makemigrations:  ## Create new migrations
 	python manage.py makemigrations
+
+coverage:
+	python -m pytest --cov=config --cov=accounts --cov=documents --cov=audit --cov-report=term-missing --cov-fail-under=90
