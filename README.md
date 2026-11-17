@@ -1,5 +1,32 @@
 # sanaap-backend-challenge-api
 
+## Contents
+
+- [Development and production environments](#development-and-production-environments)
+- [Development usage](#development-usage)
+  - [1. Install the dependencies](#1-install-the-dependencies)
+  - [2. Configure the environment](#2-configure-the-environment)
+  - [3. Start the backing services](#3-start-the-backing-services)
+  - [4. Create the database tables](#4-create-the-database-tables)
+  - [5. Create the first admin](#5-create-the-first-admin)
+  - [6. Run the server](#6-run-the-server)
+  - [7. Work with the API](#7-work-with-the-api)
+  - [8. Run the tests & quality gates](#8-run-the-tests--quality-gates)
+  - [Development without Docker](#development-without-docker)
+- [Production usage](#production-usage)
+  - [1. Configure the environment](#1-configure-the-environment)
+  - [2. Build and start the stack](#2-build-and-start-the-stack)
+  - [3. Create the first admin](#3-create-the-first-admin)
+  - [4. Work with the API](#4-work-with-the-api)
+  - [Deploying to a server](#deploying-to-a-server)
+  - [HTTPS](#https)
+- [Commands](#commands)
+- [API](#api)
+  - [Roles](#roles)
+- [How the project is built — level by level](#how-the-project-is-built--level-by-level)
+- [Project structure](#project-structure)
+- [References](#references)
+
 REST API for the Sanaap backend challenge (Part 2 — Document Management System):
 secure upload, search, update and delete of documents in MinIO, with JWT
 username/password authentication and role-based access control.
@@ -8,9 +35,40 @@ Built with [Django](https://www.djangoproject.com/) and
 [Django REST Framework](https://www.django-rest-framework.org/) — typed
 (`mypy`), linted (`ruff`), tested (`pytest`).
 
-## Usage — step by step
+## Development and production environments
 
-### 1. Install
+The project runs in two modes. **Each mode has its own usage section below —
+follow only the one you need.**
+
+| Mode | What runs where | Usage section |
+|------|-----------------|---------------|
+| **Development** | the Django app runs **on your machine** (virtualenv); Docker is used only for the backing services (PostgreSQL, MinIO, Redis) | [Development usage](#development-usage) |
+| **Production** | **everything runs in Docker**: nginx → gunicorn app container + Celery worker + PostgreSQL + MinIO + Redis | [Production usage](#production-usage) |
+
+| | Development | Production |
+|---|---|---|
+| Compose file | `docker-compose.dev.yml` (`dms-dev`) | `docker-compose.yml` (`dms-prod`) |
+| App | runs in your venv (`make run`) | `web` container (gunicorn) behind `nginx` |
+| Background worker | by hand, second terminal: `celery -A config worker -l info` | `worker` container — compose runs the same command for you |
+| Entry point | http://127.0.0.1:8000 | http://localhost:8080 (`NGINX_PORT`) |
+| Database | `postgres` container, port 5432 published | `postgres` container, internal network only |
+| Migrations | `python manage.py migrate` | automatic on container start |
+| Start | `docker compose -f docker-compose.dev.yml up -d` | `docker compose up --build` |
+| Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
+
+The two projects are isolated (separate volumes) and can run at the same
+time. In production, nginx is the only public entry point: it proxies to
+gunicorn, serves `/static/`, and upgrades WebSocket connections. Document
+bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`; a
+local-filesystem backend is available via `STORAGE_BACKEND=local` — MinIO
+console: http://127.0.0.1:9001).
+
+## Development usage
+
+Follow these steps top to bottom. The app runs in a virtualenv on your
+machine; Docker runs only the backing services.
+
+### 1. Install the dependencies
 
 ```bash
 python3 -m venv venv
@@ -28,19 +86,22 @@ Open `.env` and adjust if needed (`SECRET_KEY`, JWT token lifetimes,
 `DEFAULT_FROM_EMAIL`, …). Generate a real secret key with
 `python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))"`
 (alphanumeric + `-_` only — quotes and `#`/`$` break `.env` parsing).
-The database defaults to **PostgreSQL** running in
-Docker (next step); set `DB_ENGINE=sqlite3` for zero-setup SQLite instead.
 
-### 3. Start the development database
+The database defaults to **PostgreSQL in Docker** (started in step 3). Set
+`DB_ENGINE=sqlite3` for a zero-setup database instead.
+
+### 3. Start the backing services
+
+Start PostgreSQL, MinIO and Redis in Docker (the app itself is **not**
+containerized in development):
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
 
-The **development** compose file (`docker-compose.dev.yml`, project
-`dms-dev`) starts PostgreSQL, MinIO and Redis — the app runs in your venv.
-Port 5432 already taken?
-Change the left side to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
+The development compose file (`docker-compose.dev.yml`, project `dms-dev`)
+publishes PostgreSQL on port 5432. Port already taken? Change the left side
+to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
 
 ### 4. Create the database tables
 
@@ -48,48 +109,32 @@ Change the left side to e.g. `"5434:5432"` and set `DB_PORT=5434` in `.env`.
 python manage.py migrate
 ```
 
-*(Not needed in production — migrations run automatically on container start.)*
-
 ### 5. Create the first admin
 
-There is **no self-registration** — users are provisioned by an admin, so the
-very first admin is created from a shell:
+There is **no self-registration** — users are provisioned by an admin, so
+the very first admin is created from a shell:
 
 ```bash
 python manage.py shell -c "from accounts.models import User, UserRole; User.objects.create_superuser('admin', 'admin@example.com', 'secret123', role=UserRole.ADMIN)"
 ```
 
-In production, run it inside the app container:
-
-```bash
-docker compose exec web python manage.py shell -c "from accounts.models import User, UserRole; User.objects.create_superuser('admin', 'admin@example.com', 'secret123', role=UserRole.ADMIN)"
-```
-
 ### 6. Run the server
 
-**Development** — app in the venv, against the dev database (run the
-background worker in a second terminal):
+Run the app and the background worker — one command per terminal:
 
 ```bash
 make run
+```
+
+```bash
 celery -A config worker -l info
 ```
 
-**Production** — full stack from the default compose file (`docker-compose.yml`,
-project `dms-prod`): nginx + gunicorn app container (auto-migrates on start) +
-a Celery worker + PostgreSQL + MinIO + Redis:
-
-```bash
-docker compose up --build
-```
-
-→ http://localhost:8080 — nginx is the entry point (`NGINX_PORT` in `.env`)
+→ http://127.0.0.1:8000
 
 ### 7. Work with the API
 
-Log in with the admin credentials to get a JWT pair (examples use the dev
-server at port 8000; in production, replace it with nginx at
-`http://localhost:8080`):
+Log in to get a JWT pair:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/auth/login/ \
@@ -112,23 +157,87 @@ The full endpoint list is in [API](#api) below.
 make check      # lint + types + tests
 ```
 
-## Development & production environments
+Tests use a throwaway test database — your real data is never touched.
 
-| | Development | Production |
-|---|---|---|
-| Compose file | `docker-compose.dev.yml` (`dms-dev`) | `docker-compose.yml` (`dms-prod`) |
-| App | runs in your venv (`make run`) | `web` container (gunicorn) behind `nginx` |
-| Entry point | http://127.0.0.1:8000 | http://localhost:8080 (`NGINX_PORT`) |
-| Database | `postgres` container, port 5432 published | `postgres` container, internal network only |
-| Migrations | `python manage.py migrate` | automatic on container start |
-| Start | `docker compose -f docker-compose.dev.yml up -d` | `docker compose up --build` |
-| Stop | `docker compose -f docker-compose.dev.yml down` | `docker compose down` |
+### Development without Docker
 
-The two projects are isolated (separate volumes) and can run at the same time.
-In production, nginx is the only public entry point: it proxies to gunicorn,
-serves `/static/`, and upgrades WebSocket connections. Document bytes are stored by MinIO (`STORAGE_BACKEND=minio` in `.env`;
-a local-filesystem backend is available via `STORAGE_BACKEND=local` — MinIO
-console: http://127.0.0.1:9001).
+Keep `DB_ENGINE=sqlite3` in `.env` — the SQLite fallback needs zero setup and
+everything (`make run`, `make check`) works the same. For native PostgreSQL,
+create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
+`CREATE DATABASE dms OWNER dms;`) and set the `DB_*` values in `.env`.
+`CREATEDB` lets Django create the automatic `test_dms` test database.
+
+## Production usage
+
+Follow these steps top to bottom. Everything runs in Docker — no Python or
+virtualenv is needed on the machine.
+
+### 1. Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set at least `SECRET_KEY`, `DB_PASSWORD` and
+`ALLOWED_HOSTS=<your domain>`. Generate a real secret key with
+`python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))"`
+(alphanumeric + `-_` only — quotes and `#`/`$` break `.env` parsing).
+Set `NGINX_PORT` in `.env` if port 8080 is taken.
+
+### 2. Build and start the stack
+
+```bash
+docker compose up --build -d
+```
+
+This builds the image (installing `requirements.txt` inside it) and starts
+the full stack — one container per service:
+
+- `nginx` — the only entry point (reverse proxy, static files, WebSockets)
+- `web` — the Django app under gunicorn (migrations run automatically on
+  start — no manual `migrate` needed)
+- `worker` — the Celery background worker: **you never run it by hand** —
+  this container runs `celery -A config worker -l info` for you (its
+  `command:` is defined in `docker-compose.yml`) and listens on the Redis
+  broker (`CELERY_BROKER_URL=redis://redis:6379/0`) for background jobs
+  such as checksum computation
+- `postgres`, `minio`, `redis` — the backing services
+
+Check the worker with `docker compose logs -f worker`.
+
+→ http://localhost:8080 — nginx is the only entry point (`NGINX_PORT` in `.env`)
+
+### 3. Create the first admin
+
+There is **no self-registration** — create the first admin inside the
+running app container:
+
+```bash
+docker compose exec web python manage.py shell -c "from accounts.models import User, UserRole; User.objects.create_superuser('admin', 'admin@example.com', 'secret123', role=UserRole.ADMIN)"
+```
+
+### 4. Work with the API
+
+The API is the same as in development — through nginx at
+`http://localhost:8080`:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login/ \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "secret123"}'
+```
+
+Send the returned `access` token with every protected request:
+
+```bash
+curl http://localhost:8080/api/v1/users/ \
+     -H "Authorization: Bearer <access>"
+```
+
+The full endpoint list is in [API](#api) below. Swagger UI:
+http://localhost:8080/api/docs/
+
+Stop the stack with `docker compose down` (`-v` also wipes the volumes).
 
 ### Deploying to a server
 
@@ -138,13 +247,14 @@ Only `.env` changes per machine — the compose files are machine-independent:
 git clone <repo> && cd sanaap-backend-challenge-api
 cp .env.example .env
 # set SECRET_KEY, DB_PASSWORD, ALLOWED_HOSTS=<your domain>
-# (and NGINX_PORT in .env if port 8080 is taken)
 docker compose up --build -d
 ```
 
 Redeploying: `git pull && docker compose up --build -d`.
 
-**HTTPS:** point DNS at the server, then `certbot --nginx -d yourdomain.com` —
+### HTTPS
+
+Point DNS at the server, then `certbot --nginx -d yourdomain.com` —
 TLS terminates at nginx (the ready-made 443 block is in `nginx/nginx.conf`).
 Afterwards flip `SECURE_SSL_REDIRECT=True`, `SESSION_COOKIE_SECURE=True` and
 `CSRF_COOKIE_SECURE=True` in `.env` (keep them `False` for local HTTP —
@@ -152,37 +262,32 @@ otherwise Django redirects forever), and set
 `CSRF_TRUSTED_ORIGINS=https://yourdomain.com` (the local default
 `http://localhost:8080` keeps session-form logins working behind the proxy).
 
-### Running without Docker
-
-Keep `DB_ENGINE=sqlite3` in `.env` — the SQLite fallback needs zero setup and
-everything (`make run`, `make check`) works the same. For native PostgreSQL,
-create a role/database (`CREATE USER dms WITH PASSWORD 'dms' CREATEDB;` /
-`CREATE DATABASE dms OWNER dms;`) and set the `DB_*` values in `.env`.
-`CREATEDB` lets Django create the automatic `test_dms` test database.
-
 ## Commands
 
-| Command | What it does |
-|---------|--------------|
-| `make run` | start the dev server → http://127.0.0.1:8000 |
-| `celery -A config worker -l info` | run the background worker (development) |
-| `make migrate` | apply database migrations |
-| `make makemigrations` | create new migrations |
-| `make test` | run the test suite (pytest) |
-| `make lint` | PEP 8 check (ruff) |
-| `make format` | auto-format the code (ruff) |
-| `make typecheck` | static type check (mypy) |
-| `make check` | **all quality gates** (lint + types + tests) |
-| `make help` | list all available commands |
-| `docker compose -f docker-compose.dev.yml up -d` | start the dev database + MinIO |
-| `docker compose up --build` | build + run the production stack (nginx at :8080) |
-| `docker compose logs -f web` | production app logs |
-| `docker compose logs -f nginx` | production proxy logs |
-| `docker compose exec web <cmd>` | run a command in the production app |
-| `docker compose down` | stop production (`-v` also wipes the db volume) |
+| Command | Mode | What it does |
+|---------|------|--------------|
+| `make run` | development | start the dev server → http://127.0.0.1:8000 |
+| `celery -A config worker -l info` | development | run the background worker |
+| `make migrate` | development | apply database migrations |
+| `make makemigrations` | development | create new migrations |
+| `make test` | development | run the test suite (pytest) |
+| `make lint` | development | PEP 8 check (ruff) |
+| `make format` | development | auto-format the code (ruff) |
+| `make typecheck` | development | static type check (mypy) |
+| `make check` | development | **all quality gates** (lint + types + tests) |
+| `make coverage` | development | run the tests with a coverage report (fails below 90 %) |
+| `make help` | development | list all available commands |
+| `docker compose -f docker-compose.dev.yml up -d` | development | start PostgreSQL + MinIO + Redis |
+| `docker compose -f docker-compose.dev.yml down` | development | stop the dev backing services |
+| `docker compose up --build` | production | build + run the full stack (nginx at :8080) |
+| `docker compose logs -f web` | production | app logs |
+| `docker compose logs -f nginx` | production | proxy logs |
+| `docker compose logs -f worker` | production | Celery background worker logs |
+| `docker compose exec web <cmd>` | production | run a command inside the app container |
+| `docker compose down` | production | stop the stack (`-v` also wipes the volumes) |
 
-No `make`? Plain equivalents: `python manage.py runserver`, `python manage.py migrate`,
-`pytest`, `ruff check .`, `ruff format .`, `mypy .`
+No `make`? Plain equivalents (development): `python manage.py runserver`,
+`python manage.py migrate`, `pytest`, `ruff check .`, `ruff format .`, `mypy .`
 
 Tests live in `tests/` and run against an automatic throwaway test database
 (`test_dms` on PostgreSQL, in-memory on SQLite) — your real data is never
@@ -190,7 +295,9 @@ touched. Run them before every push; `make check` is the full gate.
 
 ## API
 
-Base URL: `/api/v1/`. All endpoints return JSON.
+Base URL: `/api/v1/`. All endpoints return JSON. The API works the same in
+development and production — only the host changes (see step 4 of each
+usage section).
 
 **Interactive documentation:** Swagger UI at `/api/docs/` — try every endpoint
 with the **Authorize** button (paste a Bearer token from login). Raw OpenAPI
@@ -267,7 +374,6 @@ Redis channel layer across workers.
 | 10 | `feature/audit-logging` | audit logging (Observer) |
 | 11 | `feature/nginx-gunicorn` | nginx reverse proxy + gunicorn |
 | 12 | `feature/websocket-notifications` | WebSocket notifications (Channels) |
-| 13 | `feature/final-qa` | coverage gate, release to `main` (`v1.0.0`) |
 
 ## Project structure
 
