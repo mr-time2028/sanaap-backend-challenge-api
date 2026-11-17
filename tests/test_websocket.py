@@ -38,7 +38,7 @@ async def test_invalid_token_is_rejected() -> None:
     await communicator.disconnect()
 
 
-async def test_authenticated_connection_is_accepted(db: None) -> None:
+async def test_authenticated_connection_is_accepted(transactional_db: None) -> None:
     _, token = await _make_user_and_token()
     communicator = WebsocketCommunicator(application, f"/ws/documents/?token={token}")
     connected, _ = await communicator.connect()
@@ -46,7 +46,7 @@ async def test_authenticated_connection_is_accepted(db: None) -> None:
     await communicator.disconnect()
 
 
-async def test_document_event_is_broadcast_to_clients(db: None) -> None:
+async def test_document_event_is_broadcast_to_clients(transactional_db: None) -> None:
     user, token = await _make_user_and_token()
     communicator = WebsocketCommunicator(application, f"/ws/documents/?token={token}")
     connected, _ = await communicator.connect()
