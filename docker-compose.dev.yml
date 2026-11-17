@@ -1,0 +1,56 @@
+# Development: PostgreSQL only — the app runs in your local venv (make run).
+# Redis and MinIO join this file at their feature levels.
+name: dms-dev
+
+services:
+  postgres:
+    container_name: "dms_dev_postgres"
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dms}
+      POSTGRES_USER: ${DB_USER:-dms}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dms}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dms} -d ${DB_NAME:-dms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    container_name: "dms_dev_minio"
+    image: bitnamilegacy/minio:latest
+    user: "0:0" 
+    command: ["minio", "server", "/opt/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_BROWSER: ${MINIO_BROWSER:-on}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKETS: ${MINIO_DEFAULT_BUCKET:-documents}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+  
+  redis:
+    container_name: "dms_dev_redis"
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  miniodata:
+  redisdata:

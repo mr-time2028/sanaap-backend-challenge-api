@@ -1,0 +1,6 @@
+# Ruff configuration — keep it minimal.
+[lint]
+# RUF012 (mutable class attribute) misfires on Django/DRF declarative config:
+# class attributes like permission_classes or Meta.fields are configuration,
+# never mutated at runtime. Its ClassVar fix also fights DRF's type stubs.
+ignore = ["RUF012"]

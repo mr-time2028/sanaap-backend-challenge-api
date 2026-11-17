@@ -1,0 +1,94 @@
+# Production: nginx + app + Celery worker + PostgreSQL + MinIO + Redis.
+# The app (from Dockerfile) auto-migrates on start; nginx is the only entry point.
+name: dms-prod
+
+services:
+  postgres:
+    container_name: "dms_postgres"
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dms}
+      POSTGRES_USER: ${DB_USER:-dms}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dms}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dms} -d ${DB_NAME:-dms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # No published ports — the app reaches postgres over the compose network.
+
+  minio:
+    container_name: "dms_minio"
+    image: bitnamilegacy/minio:latest
+    user: "0:0"
+    command: ["/opt/bitnami/minio/bin/minio", "server", "/bitnami/minio/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_BROWSER: ${MINIO_BROWSER:-on}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+
+  redis:
+    container_name: "dms_redis"
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # No published ports in production — only the app and worker use it.
+
+  web:
+    container_name: "dms_web"
+    build: .
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    volumes:
+      - staticdata:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    container_name: "dms_worker"
+    build: .
+    command: celery -A config worker -l info
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    container_name: "dms_nginx"
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - staticdata:/staticfiles:ro
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  miniodata:
+  redisdata:
+  staticdata:
